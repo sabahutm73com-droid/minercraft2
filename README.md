@@ -1,5 +1,4 @@
-# minercraft2
-#it is free and opensorce game if you take it share it wth me and with otherimport pygame
+import pygame
 import sys
 import os
 import numpy as np
@@ -12,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional, Any
 from OpenGL.GL import *
 from OpenGL.GLU import *
-import opensimplex as noise
+import opensimplex
 from PIL import Image
 import threading
 from queue import Queue
@@ -321,8 +320,8 @@ class BlockType(Enum):
     
     # بلوكات الإضاءة (6)
     TORCH = auto()
-    GLOWSTONE = auto()
-    SEA_LANTERN = auto()
+    GLOWSTONE_DUST = auto()
+    SEA_LANTERN_BLOCK = auto()
     REDSTONE_LAMP = auto()
     END_ROD = auto()
     SHROOMLIGHT = auto()
@@ -712,9 +711,42 @@ class UltraMegaEntityManager:
                 'drops': [('iron_ingot', 0.8), ('poppy', 0.5)],
                 'experience': 0
             },
-            
-            # كيانات إضافية...
         }
+
+    def spawn_entity(self, entity_type: EntityType, position: glm.vec3):
+        """إنشاء كيان جديد"""
+        entity_id = self.next_entity_id
+        self.next_entity_id += 1
+        
+        template = self.entity_templates.get(entity_type, {})
+        
+        entity = UltraMegaEntity(
+            entity_id=entity_id,
+            entity_type=entity_type,
+            position=position,
+            rotation=glm.vec2(0, 0),
+            velocity=glm.vec3(0, 0, 0),
+            health=template.get('max_health', 20),
+            max_health=template.get('max_health', 20),
+            scale=template.get('scale', 1.0),
+            ai_state="idle"
+        )
+        
+        self.entities[entity_id] = entity
+        print(f"👾 تم إنشاء كيان {template.get('name', 'Unknown')} في {position}")
+        return entity_id
+
+    def update_entities(self, delta_time: float, player_position: glm.vec3):
+        """تحديث الكيانات"""
+        for entity in self.entities.values():
+            # تحديث بسيط للموضع (محاكاة)
+            entity.position.x += math.sin(time.time() + entity.entity_id) * 0.1 * delta_time
+            entity.position.z += math.cos(time.time() + entity.entity_id) * 0.1 * delta_time
+
+    def render_entities(self):
+        """رسم الكيانات (محاكاة)"""
+        # في التنفيذ الحقيقي، سيتم رسم النماذج ثلاثية الأبعاد
+        pass
 
 # ==================== نظام العالم والتضاريس السوبر المتقدم ====================
 class UltraMegaWorldGenerator:
@@ -722,14 +754,14 @@ class UltraMegaWorldGenerator:
         self.seed = seed if seed is not None else random.randint(0, 1000000)
         
         # أنظمة الضوضاء المتعددة للتضاريس المعقدة
-        self.terrain_noise = noise.Perlin(seed=self.seed)
-        self.biome_noise = noise.Perlin(seed=self.seed + 1)
-        self.temperature_noise = noise.Perlin(seed=self.seed + 2)
-        self.humidity_noise = noise.Perlin(seed=self.seed + 3)
-        self.cave_noise = noise.Perlin(seed=self.seed + 4)
-        self.ore_noise = noise.Perlin(seed=self.seed + 5)
-        self.river_noise = noise.Perlin(seed=self.seed + 6)
-        self.tree_noise = noise.Perlin(seed=self.seed + 7)
+        self.terrain_noise = opensimplex.OpenSimplex(seed=self.seed)
+        self.biome_noise = opensimplex.OpenSimplex(seed=self.seed + 1)
+        self.temperature_noise = opensimplex.OpenSimplex(seed=self.seed + 2)
+        self.humidity_noise = opensimplex.OpenSimplex(seed=self.seed + 3)
+        self.cave_noise = opensimplex.OpenSimplex(seed=self.seed + 4)
+        self.ore_noise = opensimplex.OpenSimplex(seed=self.seed + 5)
+        self.river_noise = opensimplex.OpenSimplex(seed=self.seed + 6)
+        self.tree_noise = opensimplex.OpenSimplex(seed=self.seed + 7)
         
         # إعدادات التضاريس المتقدمة
         self.terrain_settings = {
@@ -765,6 +797,16 @@ class UltraMegaWorldGenerator:
             'END': {'temperature': 0.5, 'humidity': 0.0, 'height': 1.0, 'color': (0.6, 0.4, 0.8)}
         }
 
+    def get_height_and_biome(self, x: int, z: int):
+        """الحصول على الارتفاع والمنطقة الحيائية (محاكاة)"""
+        height = 64 + math.sin(x * 0.01) * 10 + math.cos(z * 0.01) * 10
+        biome = 'PLAINS'
+        return height, biome
+
+    def get_cave_density(self, x: int, z: int):
+        """الحصول على كثافة الكهوف (محاكاة)"""
+        return random.random()
+
 # ==================== نظام القطع (Chunk) السوبر المتقدم ====================
 class UltraMegaChunk:
     def __init__(self, chunk_x: int, chunk_z: int, world_generator: UltraMegaWorldGenerator):
@@ -779,29 +821,20 @@ class UltraMegaChunk:
         self.structures = []
         
     def generate_advanced_terrain(self):
-        """توليد تضاريس متقدمة للقطعة"""
-        for x in range(16):
-            for z in range(16):
-                world_x = self.chunk_x * 16 + x
-                world_z = self.chunk_z * 16 + z
-                
-                # الحصول على ارتفاع التضاريس والمنطقة الحيائية
-                height, biome = self.world_generator.get_height_and_biome(world_x, world_z)
-                
-                # توليد الكهوف والأنفاق
-                cave_density = self.world_generator.get_cave_density(world_x, world_z)
-                
-                # ملء عمود البلوكات مع الكهوف
-                self._fill_column_with_caves(x, z, height, biome, cave_density)
-                
-                # إضافة الهياكل الطبيعية
-                if random.random() < 0.05:  # 5% فرصة لهيكل
-                    self._add_natural_structure(x, int(height) + 1, z, biome)
-        
-        # توليد الهياكل الكبيرة عبر القطع
-        self._generate_cross_chunk_structures()
-        
-        print(f"🌍 تم توليد القطعة ({self.chunk_x}, {self.chunk_z}) مع {len(self.structures)} هياكل")
+        """توليد تضاريس متقدمة للقطعة (محاكاة)"""
+        print(f"🌍 جاري توليد القطعة ({self.chunk_x}, {self.chunk_z})")
+
+    def _fill_column_with_caves(self, x, z, height, biome, cave_density):
+        """ملء عمود البلوكات مع الكهوف (محاكاة)"""
+        pass
+
+    def _add_natural_structure(self, x, y, z, biome):
+        """إضافة هيكل طبيعي (محاكاة)"""
+        pass
+
+    def _generate_cross_chunk_structures(self):
+        """توليد هياكل عبر القطع (محاكاة)"""
+        pass
 
 # ==================== نظام الوصفات السوبر المتقدم (100+ وصفة) ====================
 class UltraMegaCraftingSystem:
@@ -886,6 +919,69 @@ class UltraMegaCraftingSystem:
         
         print(f"🧪 تم تحميل {len(self.recipes)} وصفة عمل، {len(self.furnace_recipes)} وصفة فرن، {len(self.brewing_recipes)} وصفة تركيب")
 
+    def _add_crafting_recipe(self, output_item, input_items, output_data):
+        """إضافة وصفة عمل"""
+        self.recipes[output_item] = {
+            'inputs': input_items,
+            'output': output_data
+        }
+
+    def _add_furnace_recipe(self, output_item, input_item, xp, time):
+        """إضافة وصفة فرن"""
+        self.furnace_recipes[output_item] = {
+            'input': input_item,
+            'xp': xp,
+            'time': time
+        }
+
+    def _add_brewing_recipe(self, output_potion, ingredients, base_potion, brewing_time):
+        """إضافة وصفة تركيب"""
+        self.brewing_recipes[output_potion] = {
+            'ingredients': ingredients,
+            'base': base_potion,
+            'time': brewing_time
+        }
+
+# ==================== أنظمة مساعدة ====================
+class UltraAdvancedAudioSystem:
+    def __init__(self):
+        print("🎵 تم تهيئة نظام الصوت المتقدم")
+    
+    def play_music(self, music_type):
+        """تشغيل الموسيقى (محاكاة)"""
+        print(f"🎵 تشغيل موسيقى: {music_type}")
+    
+    def play_sound_effect(self, sound, category):
+        """تشغيل تأثير صوتي (محاكاة)"""
+        print(f"🔊 تشغيل صوت: {sound}")
+    
+    def update_audio(self, position, biome, time_of_day):
+        """تحديث الصوت (محاكاة)"""
+        pass
+
+class UltraAdvancedWeatherSystem:
+    def __init__(self):
+        self.current_weather = "clear"
+        self.weather_transition = 0.0
+        self.weather_timer = 0.0
+    
+    def update(self, delta_time, player_y):
+        """تحديث الطقس (محاكاة)"""
+        self.weather_timer += delta_time
+        if self.weather_timer > 30.0:  # تغيير الطقس كل 30 ثانية
+            weather_types = ["clear", "rain", "snow", "thunder"]
+            self.current_weather = random.choice(weather_types)
+            self.weather_timer = 0.0
+            print(f"🌦️ تغيير الطقس إلى: {self.current_weather}")
+
+class UltraQuestSystem:
+    def __init__(self):
+        print("🎯 تم تهيئة نظام المهام المتقدم")
+
+class UltraAdvancedFarmingSystem:
+    def __init__(self):
+        print("🌾 تم تهيئة نظام الزراعة المتقدم")
+
 # ==================== النظام الرئيسي السوبر ميغا تيرا ====================
 class SuperMegaTeraMinecraft:
     def __init__(self):
@@ -896,10 +992,10 @@ class SuperMegaTeraMinecraft:
         self.language_manager = LanguageManager()
         
         # إعدادات العرض المتقدمة
-        self.screen_width = 1920
-        self.screen_height = 1080
+        self.screen_width = 1200
+        self.screen_height = 800
         self.screen = pygame.display.set_mode((self.screen_width, self.screen_height), 
-                                            pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE)
+                                            pygame.OPENGL | pygame.DOUBLEBUF)
         pygame.display.set_caption("ماين كرافت إكسترا - السوبر ميغا تيرا الاحترافية")
         
         # الأنظمة الرئيسية
@@ -947,7 +1043,6 @@ class SuperMegaTeraMinecraft:
         glCullFace(GL_BACK)
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-        glEnable(GL_MULTISAMPLE)
         glEnable(GL_TEXTURE_2D)
         
         # إعداد الإسقاط
@@ -997,7 +1092,7 @@ class SuperMegaTeraMinecraft:
             self.render()
             
             # التحكم في معدل الإطارات
-            self.clock.tick(165)
+            self.clock.tick(60)
             self.fps = self.clock.get_fps()
             self.world_info['fps'] = int(self.fps)
         
@@ -1071,7 +1166,7 @@ class SuperMegaTeraMinecraft:
         x, y = position
         
         # بدء لعبة جديدة (محاكاة)
-        if 600 <= x <= 1000 and 300 <= y <= 350:
+        if 400 <= x <= 800 and 300 <= y <= 350:
             self.start_new_game()
     
     def handle_mining(self):
@@ -1212,11 +1307,11 @@ class SuperMegaTeraMinecraft:
         
         # لون الزر
         if is_hovered:
-            color = (100, 150, 255, 200)  # أزرق فاتح عند التمرير
+            color = (100, 150, 255)  # أزرق فاتح عند التمرير
             border_color = (150, 200, 255)
             text_color = (255, 255, 255)
         else:
-            color = (70, 100, 200, 150)   # أزرق عادي
+            color = (70, 100, 200)   # أزرق عادي
             border_color = (100, 150, 255)
             text_color = (230, 230, 230)
         
@@ -1226,8 +1321,9 @@ class SuperMegaTeraMinecraft:
         
         # تأثير اللمعة عند التمرير
         if is_hovered:
-            highlight = pygame.Rect(x - width//2, y - height//2, width, height//3)
-            pygame.draw.rect(self.screen, (255, 255, 255, 50), highlight, border_radius=12)
+            highlight = pygame.Surface((width, height//3), pygame.SRCALPHA)
+            highlight.fill((255, 255, 255, 50))
+            self.screen.blit(highlight, (x - width//2, y - height//2))
         
         # نص الزر
         font = pygame.font.SysFont('Arial', 24)
@@ -1241,26 +1337,18 @@ class SuperMegaTeraMinecraft:
     
     def render_menu_particles(self):
         """رسم جسيمات الخلفية للقائمة"""
-        glEnable(GL_BLEND)
-        glBegin(GL_POINTS)
-        
         for _ in range(50):
             x = random.randint(0, self.screen_width)
             y = random.randint(0, self.screen_height)
-            size = random.uniform(1.0, 4.0)
-            brightness = random.uniform(0.2, 0.8)
+            size = random.randint(1, 4)
+            brightness = random.randint(50, 200)
             
             # ألوان عشوائية
-            r = random.uniform(0.5, 1.0)
-            g = random.uniform(0.5, 1.0)
-            b = random.uniform(0.5, 1.0)
+            r = random.randint(128, 255)
+            g = random.randint(128, 255)
+            b = random.randint(128, 255)
             
-            glColor4f(r, g, b, brightness)
-            glVertex2f(x, y)
-            glPointSize(size)
-        
-        glEnd()
-        glDisable(GL_BLEND)
+            pygame.draw.circle(self.screen, (r, g, b, brightness), (x, y), size)
     
     def render_super_world(self):
         """رسم العالم السوبر"""
@@ -1285,11 +1373,7 @@ class SuperMegaTeraMinecraft:
     
     def render_advanced_sky(self):
         """رسم سماء متقدمة"""
-        glPushMatrix()
-        glLoadIdentity()
-        
         glDepthMask(GL_FALSE)
-        glDisable(GL_DEPTH_TEST)
         
         # تدرج لوني متقدم للسماء
         glBegin(GL_QUADS)
@@ -1317,9 +1401,7 @@ class SuperMegaTeraMinecraft:
         # السحب (محاكاة)
         self.render_clouds()
         
-        glEnable(GL_DEPTH_TEST)
         glDepthMask(GL_TRUE)
-        glPopMatrix()
     
     def render_clouds(self):
         """رسم السحب"""
@@ -1431,9 +1513,9 @@ class SuperMegaTeraMinecraft:
             BlockType.DIAMOND_ORE: (0.4, 0.8, 0.8),
             BlockType.BRICKS: (0.8, 0.4, 0.3),
             BlockType.STONE_BRICKS: (0.5, 0.5, 0.5),
-            BlockType.GLASS: (0.8, 0.8, 0.9, 0.5),
-            BlockType.WATER: (0.2, 0.3, 0.8, 0.7),
-            BlockType.LAVA: (1.0, 0.3, 0.1, 0.9)
+            BlockType.GLASS: (0.8, 0.8, 0.9),
+            BlockType.WATER: (0.2, 0.3, 0.8),
+            BlockType.LAVA: (1.0, 0.3, 0.1)
         }
         
         color = colors.get(block_type, (1.0, 1.0, 1.0))
@@ -1441,10 +1523,10 @@ class SuperMegaTeraMinecraft:
         glPushMatrix()
         glTranslatef(x, y, z)
         
-        if len(color) == 4:  # بلوك شفاف
+        if block_type in [BlockType.GLASS, BlockType.WATER]:
             glEnable(GL_BLEND)
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-            glColor4f(color[0], color[1], color[2], color[3])
+            glColor4f(color[0], color[1], color[2], 0.7)
         else:
             glColor3f(color[0], color[1], color[2])
         
@@ -1467,7 +1549,7 @@ class SuperMegaTeraMinecraft:
         
         glEnd()
         
-        if len(color) == 4:
+        if block_type in [BlockType.GLASS, BlockType.WATER]:
             glDisable(GL_BLEND)
         
         glPopMatrix()
@@ -1529,7 +1611,6 @@ class SuperMegaTeraMinecraft:
             z = random.uniform(-50, 50)
             
             glVertex3f(x, y, z)
-            glPointSize(2.0)
         
         glEnd()
         glDisable(GL_BLEND)
@@ -1546,7 +1627,6 @@ class SuperMegaTeraMinecraft:
         glLoadIdentity()
         
         glDisable(GL_DEPTH_TEST)
-        glEnable(GL_BLEND)
         
         # رسم الواجهة الأساسية
         self.render_advanced_hud()
@@ -1556,7 +1636,6 @@ class SuperMegaTeraMinecraft:
         self.render_quest_log()
         self.render_debug_info()
         
-        glDisable(GL_BLEND)
         glEnable(GL_DEPTH_TEST)
         
         glMatrixMode(GL_PROJECTION)
@@ -1607,8 +1686,7 @@ class SuperMegaTeraMinecraft:
         
         # القلب
         font = pygame.font.SysFont('Arial', 20)
-        heart_icon = "❤️" if health_percentage > 0.2 else "💔"
-        heart_text = font.render(heart_icon, True, (255, 255, 255))
+        heart_text = font.render("❤️", True, (255, 255, 255))
         self.screen.blit(heart_text, (x - 30, y))
         
         # نص الصحة
@@ -1636,8 +1714,7 @@ class SuperMegaTeraMinecraft:
         
         # أيقونة الطعام
         font = pygame.font.SysFont('Arial', 16)
-        food_icon = "🍗" if hunger_percentage > 0.5 else "🍖"
-        food_text = font.render(food_icon, True, (255, 255, 255))
+        food_text = font.render("🍗", True, (255, 255, 255))
         self.screen.blit(food_text, (x - 25, y))
         
         # نص الجوع
@@ -1723,7 +1800,7 @@ class SuperMegaTeraMinecraft:
         map_y = map_margin
         
         # خلفية الخريطة
-        pygame.draw.rect(self.screen, (20, 20, 30, 180), (map_x, map_y, map_size, map_size), border_radius=10)
+        pygame.draw.rect(self.screen, (20, 20, 30), (map_x, map_y, map_size, map_size), border_radius=10)
         pygame.draw.rect(self.screen, (80, 120, 200), (map_x, map_y, map_size, map_size), 2, border_radius=10)
         
         # عنوان الخريطة
@@ -1758,7 +1835,7 @@ class SuperMegaTeraMinecraft:
         log_y = 120
         
         # خلفية السجل
-        pygame.draw.rect(self.screen, (30, 30, 40, 180), (log_x, log_y, log_width, log_height), border_radius=8)
+        pygame.draw.rect(self.screen, (30, 30, 40), (log_x, log_y, log_width, log_height), border_radius=8)
         pygame.draw.rect(self.screen, (100, 150, 200), (log_x, log_y, log_width, log_height), 2, border_radius=8)
         
         # العنوان
@@ -1867,11 +1944,6 @@ class SuperMegaTeraMinecraft:
                 y = start_y + (row + 1) * (slot_size + spacing) + 20
                 
                 self.draw_inventory_slot(x, y, slot_size)
-        
-        # قسم الصنع
-        craft_x = start_x + 500
-        craft_y = start_y
-        self.render_crafting_section(craft_x, craft_y)
     
     def draw_inventory_slot(self, x: int, y: int, size: int, selected: bool = False):
         """رسم فتحة مخزون"""
@@ -1898,45 +1970,6 @@ class SuperMegaTeraMinecraft:
                 count = random.randint(1, 64)
                 count_text = font.render(str(count), True, (255, 255, 255))
                 self.screen.blit(count_text, (x + size - 15, y + size - 15))
-    
-    def render_crafting_section(self, x: int, y: int):
-        """رسم قسم الصنع"""
-        # خلفية قسم الصنع
-        craft_width = 200
-        craft_height = 200
-        pygame.draw.rect(self.screen, (60, 60, 90), (x, y, craft_width, craft_height), border_radius=10)
-        pygame.draw.rect(self.screen, (120, 120, 200), (x, y, craft_width, craft_height), 2, border_radius=10)
-        
-        # عنوان قسم الصنع
-        font = pygame.font.SysFont('Arial', 18, bold=True)
-        title_text = font.render(self.language_manager.get_text("crafting"), True, (255, 255, 255))
-        self.screen.blit(title_text, (x + 10, y + 10))
-        
-        # شبكة الصنع (محاكاة)
-        craft_slot_size = 40
-        craft_start_x = x + 20
-        craft_start_y = y + 50
-        
-        for row in range(2):
-            for col in range(2):
-                slot_x = craft_start_x + col * (craft_slot_size + 5)
-                slot_y = craft_start_y + row * (craft_slot_size + 5)
-                
-                pygame.draw.rect(self.screen, (80, 80, 110), (slot_x, slot_y, craft_slot_size, craft_slot_size), border_radius=4)
-                pygame.draw.rect(self.screen, (140, 140, 180), (slot_x, slot_y, craft_slot_size, craft_slot_size), 1, border_radius=4)
-        
-        # سهم النتيجة
-        arrow_x = craft_start_x + 100
-        arrow_y = craft_start_y + 20
-        font_arrow = pygame.font.SysFont('Arial', 24)
-        arrow_text = font_arrow.render("→", True, (255, 255, 255))
-        self.screen.blit(arrow_text, (arrow_x, arrow_y))
-        
-        # فتحة النتيجة
-        result_x = craft_start_x + 130
-        result_y = craft_start_y + 20
-        pygame.draw.rect(self.screen, (100, 100, 130), (result_x, result_y, craft_slot_size, craft_slot_size), border_radius=4)
-        pygame.draw.rect(self.screen, (160, 160, 200), (result_x, result_y, craft_slot_size, craft_slot_size), 1, border_radius=4)
     
     def render_settings(self):
         """رسم شاشة الإعدادات"""
