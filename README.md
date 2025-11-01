@@ -1,6 +1,5 @@
 # minercraft2
-it is free and opensorce game
- if you take it share it wth me and with otherimport pygame
+#it is free and opensorce game if you take it share it wth me and with otherimport pygame
 import sys
 import os
 import numpy as np
